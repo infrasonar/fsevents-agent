@@ -23,10 +23,6 @@ Environment                 | Default                       | Description
 CGO_ENABLED=0 go build -trimpath -o fsevent-agent
 ```
 
-Or, solaris build:
-```
-GOOS=solaris GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o fsevent-agent.solaris-amd64
-```
 
 ## Installation
 

@@ -25,4 +25,7 @@ go.work.sum
 .env
 
 # build
-fsevent-agent
+fsevent-agent*
+
+# watch file
+watch.cnf
