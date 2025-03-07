@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"log"
 	"os"
 	"slices"
@@ -15,6 +16,10 @@ import (
 // is loaded from tape and not from cache
 const THRESHOLD_NON_CACHE = 5.0
 
+// MAX_FILES is the maximum number of files considered as latest. The oldestfiles will be
+// removed from cache once this limit is reached.
+const MAX_FILES = 200
+
 type FileEvent struct {
 	Path            string
 	LastTime        time.Time
@@ -23,12 +28,30 @@ type FileEvent struct {
 	LongestDuration time.Duration
 }
 
-type FileEventOut struct {
+type FileEventState struct {
 	Path            string  `json:"name"`
 	LastTime        int64   `json:"lastTime"`
 	LastDuration    float64 `json:"lastDuration"`
 	LongestTime     int64   `json:"longestTime"`
 	LongestDuration float64 `json:"longestDuration"`
+}
+type StateLoad struct {
+	Version int     `json:"version"`
+	Average float64 `json:"average"`
+	Counter int64   `json:"n"`
+	Latest  []struct {
+		Path            string  `json:"name"`
+		LastTime        int64   `json:"lastTime"`
+		LastDuration    float64 `json:"lastDuration"`
+		LongestTime     int64   `json:"longestTime"`
+		LongestDuration float64 `json:"longestDuration"`
+	} `json:"latest"`
+}
+type State struct {
+	Version int              `json:"version"`
+	Average float64          `json:"average"`
+	Counter int64            `json:"n"`
+	Latest  []map[string]any `json:"latest"`
 }
 
 type FsEventsStore struct {
@@ -40,6 +63,7 @@ type FsEventsStore struct {
 var FsEvents = FsEventsStore{
 	register: map[string]*FileEvent{},
 	n:        0,
+	average:  0.0,
 }
 
 func (f *FsEventsStore) Set(path string) {
@@ -73,9 +97,9 @@ func (f *FsEventsStore) Upd(path string) {
 // Latest returns the latest `n“ files which are processed (queued files are skipped)
 // This also cleans older files from the registry so we don't need to clean during each
 // registration
-func (f *FsEventsStore) Latest(n int) []*FileEventOut {
+func (f *FsEventsStore) GetState() *State {
 	done := make([]*FileEvent, 0, len(f.register))
-	ret := make([]*FileEventOut, 0, n)
+	ret := make([]map[string]any, 0, MAX_FILES)
 
 	for _, v := range f.register {
 		if !v.LongestTime.IsZero() {
@@ -94,19 +118,66 @@ func (f *FsEventsStore) Latest(n int) []*FileEventOut {
 	})
 
 	for idx, v := range done {
-		if idx > n {
+		if idx > MAX_FILES {
 			delete(f.register, v.Path)
 		} else {
-			ret = append(ret, &FileEventOut{
-				Path:            v.Path,
-				LastTime:        v.LastTime.Unix(),
-				LastDuration:    v.LastDuration.Seconds(),
-				LongestTime:     v.LongestTime.Unix(),
-				LongestDuration: v.LastDuration.Seconds(),
+			ret = append(ret, map[string]any{
+				"name":            v.Path,
+				"lastTime":        v.LastTime.Unix(),
+				"lastDuration":    v.LastDuration.Seconds(),
+				"longestTime":     v.LongestTime.Unix(),
+				"longestDuration": v.LastDuration.Seconds(),
 			})
 		}
 	}
-	return ret
+	return &State{
+		Version: 0,
+		Average: f.average,
+		Counter: f.n,
+		Latest:  ret,
+	}
+}
+func (s *State) Save() error {
+	fn := os.Getenv("FN_STATE_JSON")
+	if fn == "" {
+		fn = "state.json"
+	}
+
+	bytes, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(fn, bytes, 0644)
+}
+
+func (f *FsEventsStore) Restore() {
+	fn := os.Getenv("FN_STATE_JSON")
+	if fn == "" {
+		fn = "state.json"
+	}
+
+	content, err := os.ReadFile(fn)
+	if err != nil {
+		log.Printf("Error reading state file: %v", err)
+		return
+	}
+
+	var payload StateLoad
+	err = json.Unmarshal(content, &payload)
+	if err != nil {
+		log.Fatal("Error during Unmarshal(): ", err)
+	}
+	f.average = payload.Average
+	f.n = payload.Counter
+	for _, v := range payload.Latest {
+		f.register[v.Path] = &FileEvent{
+			Path:            v.Path,
+			LastTime:        time.Unix(v.LastTime, 0),
+			LastDuration:    time.Duration(v.LastDuration * float64(time.Second)),
+			LongestTime:     time.Unix(v.LongestTime, 0),
+			LongestDuration: time.Duration(v.LongestDuration * float64(time.Second)),
+		}
+	}
 }
 
 func handleEvents(w *fsevents.Watcher, quit chan bool) error {
