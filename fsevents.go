@@ -6,6 +6,8 @@ import (
 	"os"
 	"slices"
 	"time"
+
+	"github.com/infrasonar/go-libagent"
 )
 
 // THRESHOLD_NON_CACHE is the minimal time in seconds which we consider that the file
@@ -143,10 +145,10 @@ func (f *FsEventsStore) GetState() *State {
 			ret = append(ret, map[string]any{
 				"name":             v.Path,
 				"lastTime":         v.LastTime.Unix(),
-				"lastDuration":     lastDuration,
+				"lastDuration":     libagent.IFloat64(lastDuration),
 				"lastFromCache":    lastFromCache,
 				"longestTime":      v.LongestTime.Unix(),
-				"longestDuration":  longestDuration,
+				"longestDuration":  libagent.IFloat64(longestDuration),
 				"longestFromCache": longestFromCache,
 			})
 			avgLatest += longestDuration
