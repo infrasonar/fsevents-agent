@@ -1,20 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
-	"log"
+	"fmt"
 	"os"
 	"slices"
-	"strings"
 	"time"
-
-	fsevents "github.com/tywkeene/go-fsevents"
 )
 
 // THRESHOLD_NON_CACHE is the minimal time in seconds which we consider that the file
-// is loaded from tape and not from cache
-const THRESHOLD_NON_CACHE = 5.0
+// is loaded from tape and not from cache. Longer than 8.0 seconds seems reasonable to
+// assume that the file has been read from tape.
+const THRESHOLD_NON_CACHE = 8.0
 
 // MAX_FILES is the maximum number of files considered as latest. The oldestfiles will be
 // removed from cache once this limit is reached.
@@ -35,11 +32,14 @@ type FileEventState struct {
 	LongestTime     int64   `json:"longestTime"`
 	LongestDuration float64 `json:"longestDuration"`
 }
+
 type StateLoad struct {
-	Version int     `json:"version"`
-	Average float64 `json:"average"`
-	Counter int64   `json:"n"`
-	Latest  []struct {
+	Version     int     `json:"version"`
+	Average     float64 `json:"average"`
+	AverageTape float64 `json:"averageTape"`
+	Counter     int64   `json:"n"`
+	CounterTape int64   `json:"nTape"`
+	Latest      []struct {
 		Path            string  `json:"name"`
 		LastTime        int64   `json:"lastTime"`
 		LastDuration    float64 `json:"lastDuration"`
@@ -47,17 +47,25 @@ type StateLoad struct {
 		LongestDuration float64 `json:"longestDuration"`
 	} `json:"latest"`
 }
+
 type State struct {
-	Version int              `json:"version"`
-	Average float64          `json:"average"`
-	Counter int64            `json:"n"`
-	Latest  []map[string]any `json:"latest"`
+	Version       int              `json:"version"`
+	Average       float64          `json:"average"`
+	AverageTape   float64          `json:"averageTape"`
+	Counter       int64            `json:"n"`
+	CounterTape   int64            `json:"nTape"`
+	Latest        []map[string]any `json:"latest"`
+	avgLatest     float64
+	avgLatestTape float64
+	numTape       int
 }
 
 type FsEventsStore struct {
-	register map[string]*FileEvent
-	n        int64
-	average  float64
+	register    map[string]*FileEvent
+	n           int64
+	nTape       int64
+	average     float64
+	averageTape float64
 }
 
 var FsEvents = FsEventsStore{
@@ -86,11 +94,14 @@ func (f *FsEventsStore) Upd(path string) {
 			v.LongestTime = v.LastTime
 		}
 		elapsed := v.LongestDuration.Seconds()
-		if elapsed > THRESHOLD_NON_CACHE {
-			nn := float64(f.n)
-			f.n += 1
-			f.average = (f.average*nn + elapsed) / float64(f.n)
+		if elapsed >= THRESHOLD_NON_CACHE {
+			nn := float64(f.nTape)
+			f.nTape += 1
+			f.averageTape = (f.averageTape*nn + elapsed) / float64(f.nTape)
 		}
+		nn := float64(f.n)
+		f.n += 1
+		f.average = (f.average*nn + elapsed) / float64(f.n)
 	}
 }
 
@@ -100,6 +111,9 @@ func (f *FsEventsStore) Upd(path string) {
 func (f *FsEventsStore) GetState() *State {
 	done := make([]*FileEvent, 0, len(f.register))
 	ret := make([]map[string]any, 0, MAX_FILES)
+	avgLatest := 0.0
+	avgLatestTape := 0.0
+	numTape := 0
 
 	for _, v := range f.register {
 		if !v.LongestTime.IsZero() {
@@ -121,22 +135,46 @@ func (f *FsEventsStore) GetState() *State {
 		if idx > MAX_FILES {
 			delete(f.register, v.Path)
 		} else {
+			lastDuration := v.LastDuration.Seconds()
+			lastFromCache := lastDuration < THRESHOLD_NON_CACHE
+			longestDuration := v.LongestDuration.Seconds()
+			longestFromCache := longestDuration < THRESHOLD_NON_CACHE
+
 			ret = append(ret, map[string]any{
-				"name":            v.Path,
-				"lastTime":        v.LastTime.Unix(),
-				"lastDuration":    v.LastDuration.Seconds(),
-				"longestTime":     v.LongestTime.Unix(),
-				"longestDuration": v.LastDuration.Seconds(),
+				"name":             v.Path,
+				"lastTime":         v.LastTime.Unix(),
+				"lastDuration":     lastDuration,
+				"lastFromCache":    lastFromCache,
+				"longestTime":      v.LongestTime.Unix(),
+				"longestDuration":  longestDuration,
+				"longestFromCache": longestFromCache,
 			})
+			avgLatest += longestDuration
+			if !longestFromCache {
+				numTape += 1
+				avgLatestTape += longestDuration
+			}
 		}
 	}
+
+	if avgLatest > 0.0 {
+		avgLatest /= float64(len(ret))
+	}
+	if avgLatestTape > 0.0 {
+		avgLatestTape /= float64(numTape)
+	}
+
 	return &State{
-		Version: 0,
-		Average: f.average,
-		Counter: f.n,
-		Latest:  ret,
+		Version:       0,
+		Average:       f.average,
+		Counter:       f.n,
+		Latest:        ret,
+		avgLatest:     avgLatest,
+		avgLatestTape: avgLatestTape,
+		numTape:       numTape,
 	}
 }
+
 func (s *State) Save() error {
 	fn := os.Getenv("FN_STATE_JSON")
 	if fn == "" {
@@ -150,7 +188,7 @@ func (s *State) Save() error {
 	return os.WriteFile(fn, bytes, 0644)
 }
 
-func (f *FsEventsStore) Restore() {
+func (f *FsEventsStore) Restore() error {
 	fn := os.Getenv("FN_STATE_JSON")
 	if fn == "" {
 		fn = "state.json"
@@ -158,15 +196,15 @@ func (f *FsEventsStore) Restore() {
 
 	content, err := os.ReadFile(fn)
 	if err != nil {
-		log.Printf("Error reading state file: %v", err)
-		return
+		return fmt.Errorf("error reading state file: %v", err)
 	}
 
 	var payload StateLoad
 	err = json.Unmarshal(content, &payload)
 	if err != nil {
-		log.Fatal("Error during Unmarshal(): ", err)
+		return fmt.Errorf("error during Unmarshal(): %v", err)
 	}
+
 	f.average = payload.Average
 	f.n = payload.Counter
 	for _, v := range payload.Latest {
@@ -178,71 +216,6 @@ func (f *FsEventsStore) Restore() {
 			LongestDuration: time.Duration(v.LongestDuration * float64(time.Second)),
 		}
 	}
-}
 
-func handleEvents(w *fsevents.Watcher, quit chan bool) error {
-	// Watch for events
-	go w.Watch()
-	for {
-		select {
-		case event := <-w.Events:
-			if !event.IsDirEvent() {
-				log.Printf("Path: \"%s\"    Mask: %d", event.Path, event.RawEvent.Mask)
-				if fsevents.CheckMask(fsevents.Open, event.RawEvent.Mask) {
-					FsEvents.Set(event.Path)
-				} else {
-					FsEvents.Upd(event.Path)
-				}
-			}
-		case err := <-w.Errors:
-			log.Println("Watch error: ", err)
-		case <-quit:
-			return nil // QUIT
-		}
-	}
-}
-
-func FileWatcher(quit chan bool) {
-	fnWatchPaths := os.Getenv("WATCH_PATHS")
-	if fnWatchPaths == "" {
-		fnWatchPaths = "watch.cnf"
-	}
-
-	fi, err := os.Open(fnWatchPaths)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer fi.Close()
-
-	var mask uint32 = fsevents.AllEvents
-
-	w, err := fsevents.NewWatcher()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	scanner := bufio.NewScanner(fi)
-	for scanner.Scan() {
-		watchDir := scanner.Text()
-		watchDir = strings.TrimSpace(watchDir)
-
-		if watchDir != "" {
-			d, err := w.AddDescriptor(watchDir, mask)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			if err := d.Start(); err != nil {
-				log.Fatal(err)
-			}
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-
-	if err := handleEvents(w, quit); err != nil {
-		log.Fatalf("Error handling events: %s", err.Error())
-	}
+	return nil
 }

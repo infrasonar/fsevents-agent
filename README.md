@@ -1,9 +1,9 @@
-[![CI](https://github.com/infrasonar/fsevent-agent/workflows/CI/badge.svg)](https://github.com/infrasonar/fsevent-agent/actions)
-[![Release Version](https://img.shields.io/github/release/infrasonar/fsevent-agent)](https://github.com/infrasonar/fsevent-agent/releases)
+[![CI](https://github.com/infrasonar/fsevents-agent/workflows/CI/badge.svg)](https://github.com/infrasonar/fsevents-agent/actions)
+[![Release Version](https://img.shields.io/github/release/infrasonar/fsevents-agent)](https://github.com/infrasonar/fsevents-agent/releases)
 
-# InfraSonar FSevent Agent
+# InfraSonar FileSystem Events Agent
 
-Documentation: https://docs.infrasonar.com/collectors/agents/fsevent/
+Documentation: https://docs.infrasonar.com/collectors/agents/fsevents/
 
 ## Environment variables
 
@@ -16,11 +16,12 @@ Environment                 | Default                       | Description
 `API_URI`                   | https://api.infrasonar.com    | InfraSonar API.
 `SKIP_VERIFY`               | _none_                        | Set to `1` or something else to skip certificate validation.
 `CHECK_FS`                  | `300`                         | Interval in seconds for the `fs` check.
-
+`WATCH_PATHS`               | `watch.cnf`                   | Configuration file with paths to watch for file system events.
+`FN_STATE_JSON`             | `state.json`                  | File where the state is stored.
 
 ## Build
 ```
-CGO_ENABLED=0 go build -trimpath -o fsevent-agent
+CGO_ENABLED=0 go build -trimpath -o fsevents-agent
 ```
 
 
@@ -28,39 +29,39 @@ CGO_ENABLED=0 go build -trimpath -o fsevent-agent
 
 Download the latest release:
 ```bash
-wget https://github.com/infrasonar/fsevent-agent/releases/download/v0.1.0/fsevent-agent
+wget https://github.com/infrasonar/fsevents-agent/releases/download/v0.1.0/fsevents-agent
 ```
 
-> _The pre-build binary is build for the **fsevent-amd64** platform. For other platforms build from source using the command:_ `CGO_ENABLED=0 go build -o fsevent-agent`
+> _The pre-build binary is build for the **fsevents-amd64** platform. For other platforms build from source using the command:_ `CGO_ENABLED=0 go build -o fsevents-agent`
 
 Ensure the binary is executable:
 ```
-chmod +x fsevent-agent
+chmod +x fsevents-agent
 ```
 
-Copy the binary to `/usr/sbin/infrasonar-fsevent-agent`
+Copy the binary to `/usr/sbin/infrasonar-fsevents-agent`
 
 ```
-sudo cp fsevent-agent /usr/sbin/infrasonar-fsevent-agent
+sudo cp fsevents-agent /usr/sbin/infrasonar-fsevents-agent
 ```
 
 ### Using Systemd
 
 ```bash
-sudo touch /etc/systemd/system/infrasonar-fsevent-agent.service
-sudo chmod 664 /etc/systemd/system/infrasonar-fsevent-agent.service
+sudo touch /etc/systemd/system/infrasonar-fsevents-agent.service
+sudo chmod 664 /etc/systemd/system/infrasonar-fsevents-agent.service
 ```
 
 **1. Using you favorite editor, add the content below to the file created:**
 
 ```
 [Unit]
-Description=InfraSonar fsevent Agent
+Description=InfraSonar fsevents Agent
 Wants=network.target
 
 [Service]
-EnvironmentFile=/etc/infrasonar/fsevent-agent.env
-ExecStart=/usr/sbin/infrasonar-fsevent-agent
+EnvironmentFile=/etc/infrasonar/fsevents-agent.env
+ExecStart=/usr/sbin/infrasonar-fsevents-agent
 
 [Install]
 WantedBy=multi-user.target
@@ -72,13 +73,13 @@ WantedBy=multi-user.target
 sudo mkdir /etc/infrasonar
 ```
 
-**3. Create the file `/etc/infrasonar/fsevent-agent.env` with at least:**
+**3. Create the file `/etc/infrasonar/fsevents-agent.env` with at least:**
 
 ```
 TOKEN=<YOUR TOKEN HERE>
 ```
 
-Optionaly, add environment variable to the `fsevent-agent.env` file for settings like `ASSET_ID` or `CONFIG_PATH` _(see all [environment variables](#environment-variables) in the table above)_.
+Optionaly, add environment variable to the `fsevents-agent.env` file for settings like `ASSET_ID` or `CONFIG_PATH` _(see all [environment variables](#environment-variables) in the table above)_.
 
 **4. Reload systemd:**
 
@@ -89,19 +90,19 @@ sudo systemctl daemon-reload
 **5. Install the service:**
 
 ```bash
-sudo systemctl enable infrasonar-fsevent-agent
+sudo systemctl enable infrasonar-fsevents-agent
 ```
 
 **Finally, you may want to start/stop or view the status:**
 ```bash
-sudo systemctl start infrasonar-fsevent-agent
-sudo systemctl stop infrasonar-fsevent-agent
-sudo systemctl status infrasonar-fsevent-agent
+sudo systemctl start infrasonar-fsevents-agent
+sudo systemctl stop infrasonar-fsevents-agent
+sudo systemctl status infrasonar-fsevents-agent
 ```
 
 **View logging:**
 ```bash
-journalctl -u infrasonar-fsevent-agent
+journalctl -u infrasonar-fsevents-agent
 ```
 
-# fsevents-agent
+# fseventss-agent
