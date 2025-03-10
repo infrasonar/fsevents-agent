@@ -28,7 +28,8 @@ func handleEvents(w *fsevents.Watcher, quit chan bool) error {
 		case err := <-w.Errors:
 			log.Println("Watch error: ", err)
 		case <-quit:
-			err := FsEvents.GetState().Save()
+			state := FsEvents.GetState()
+			err := state.Save()
 			return err // QUIT
 		}
 	}
