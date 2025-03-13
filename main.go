@@ -46,5 +46,6 @@ func main() {
 		log.Printf("Failed to restore: %v\n", err)
 	}
 
-	FileWatcher(quit)
+	go FileWatcher(quit)
+	<-quit
 }
