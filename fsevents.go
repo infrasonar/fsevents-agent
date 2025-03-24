@@ -11,6 +11,10 @@ import (
 	"github.com/infrasonar/go-libagent"
 )
 
+// STATE_VERSION is the version for tje json file. This might be useful when a
+// migration is required.
+const STATE_VERSION = 1
+
 // THRESHOLD_NON_CACHE is the minimal time in seconds which we consider that the file
 // is loaded from tape and not from cache. Longer than 8.0 seconds seems reasonable to
 // assume that the file has been read from tape.
@@ -217,7 +221,7 @@ func (f *FsEventsStore) GetState() *State {
 	}
 
 	return &State{
-		Version:               0,
+		Version:               STATE_VERSION,
 		Average:               f.average,
 		AverageTape:           f.averageTape,
 		Counter:               f.n,
