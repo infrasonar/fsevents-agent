@@ -18,6 +18,7 @@ Environment                 | Default                       | Description
 `CHECK_FS`                  | `300`                         | Interval in seconds for the `fs` check.
 `WATCH_PATHS`               | `watch.cnf`                   | Configuration file with paths to watch for file system events.
 `FN_STATE_JSON`             | `state.json`                  | File where the state is stored.
+`CACHE_BPS_THRESHOLD`       | `800`                         | Threshold in MB/s which defines when the file is from tape or cache.
 
 ## Build
 ```

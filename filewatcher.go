@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	fsevents "github.com/tywkeene/go-fsevents"
@@ -36,6 +37,15 @@ func handleEvents(w *fsevents.Watcher, quit chan bool) error {
 }
 
 func FileWatcher(quit chan bool) {
+	cacheBpsThresholdEnv := os.Getenv("CACHE_BPS_THRESHOLD")
+	if cacheBpsThresholdEnv != "" {
+		num, err := strconv.ParseInt(cacheBpsThresholdEnv, 10, 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+		ThresholdCacheBps = float64(num) * 1000000.0
+	}
+
 	fnWatchPaths := os.Getenv("WATCH_PATHS")
 	if fnWatchPaths == "" {
 		fnWatchPaths = "watch.cnf"
@@ -62,11 +72,11 @@ func FileWatcher(quit chan bool) {
 		if watchDir != "" {
 			d, err := w.AddDescriptor(watchDir, mask)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatalf("%v (%v)", err, watchDir)
 			}
 
 			if err := d.Start(); err != nil {
-				log.Fatal(err)
+				log.Fatalf("%v (%v)", err, watchDir)
 			}
 		}
 	}

@@ -16,9 +16,16 @@ import (
 // assume that the file has been read from tape.
 const THRESHOLD_NON_CACHE = 8.0
 
+// ThresholdCacheBps can be overwritten with environment variable
+var ThresholdCacheBps float64 = 800000000.0
+
 // MAX_FILES is the maximum number of files considered as latest. The oldestfiles will be
 // removed from cache once this limit is reached.
 const MAX_FILES = 200
+
+func isFromCache(elapsed, bps float64) bool {
+	return elapsed < THRESHOLD_NON_CACHE || bps > ThresholdCacheBps
+}
 
 type FileEvent struct {
 	Path               string
@@ -32,14 +39,6 @@ type FileEvent struct {
 	LongestBytesPerSec float64
 }
 
-type FileEventState struct {
-	Path            string  `json:"name"`
-	LastTime        int64   `json:"lastTime"`
-	LastDuration    float64 `json:"lastDuration"`
-	LongestTime     int64   `json:"longestTime"`
-	LongestDuration float64 `json:"longestDuration"`
-}
-
 type StateLoad struct {
 	Version     int     `json:"version"`
 	Average     float64 `json:"average"`
@@ -47,11 +46,15 @@ type StateLoad struct {
 	Counter     int64   `json:"n"`
 	CounterTape int64   `json:"nTape"`
 	Latest      []struct {
-		Path            string  `json:"name"`
-		LastTime        int64   `json:"lastTime"`
-		LastDuration    float64 `json:"lastDuration"`
-		LongestTime     int64   `json:"longestTime"`
-		LongestDuration float64 `json:"longestDuration"`
+		Path               string  `json:"name"`
+		LastTime           int64   `json:"lastTime"`
+		LastDuration       float64 `json:"lastDuration"`
+		LastFileSize       int64   `json:"lastFileSize"`
+		LastBytesPerSec    float64 `json:"lastBytesPerSec"`
+		LongestTime        int64   `json:"longestTime"`
+		LongestDuration    float64 `json:"longestDuration"`
+		LongestFileSize    int64   `json:"longestFileSize"`
+		LongestBytesPerSec float64 `json:"longestBytesPerSec"`
 	} `json:"latest"`
 }
 
@@ -72,13 +75,14 @@ type State struct {
 }
 
 type FsEventsStore struct {
-	register     map[string]*FileEvent
-	n            int64
-	nTape        int64
-	average      float64
-	averageTape  float64
-	bytesTape    float64
-	durationTape float64
+	cacheThreshold int64
+	register       map[string]*FileEvent
+	n              int64
+	nTape          int64
+	average        float64
+	averageTape    float64
+	bytesTape      float64
+	durationTape   float64
 }
 
 var FsEvents = FsEventsStore{
@@ -116,15 +120,15 @@ func (f *FsEventsStore) Upd(path string) {
 			v.LastDuration = time.Since(v.LastTime)
 
 			elapsed := v.LastDuration.Seconds()
-			if elapsed >= THRESHOLD_NON_CACHE {
+			v.LastBytesPerSec = float64(v.LastFileSize) / elapsed
+
+			if !isFromCache(elapsed, v.LastBytesPerSec) {
 				nn := float64(f.nTape)
 				f.nTape += 1
 				f.averageTape = (f.averageTape*nn + elapsed) / float64(f.nTape)
 				f.bytesTape += float64(v.LastFileSize)
 				f.durationTape += elapsed
 			}
-
-			v.LastBytesPerSec = float64(v.LastFileSize) / elapsed
 
 			if v.LongestDuration < v.LastDuration {
 				v.LongestDuration = v.LastDuration
@@ -176,9 +180,9 @@ func (f *FsEventsStore) GetState() *State {
 			delete(f.register, v.Path)
 		} else {
 			lastDuration := v.LastDuration.Seconds()
-			lastFromCache := lastDuration < THRESHOLD_NON_CACHE
+			lastFromCache := isFromCache(lastDuration, v.LastBytesPerSec)
 			longestDuration := v.LongestDuration.Seconds()
-			longestFromCache := longestDuration < THRESHOLD_NON_CACHE
+			longestFromCache := isFromCache(longestDuration, v.LongestBytesPerSec)
 
 			ret = append(ret, map[string]any{
 				"name":               v.Path,
