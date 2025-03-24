@@ -271,11 +271,15 @@ func (f *FsEventsStore) Restore() error {
 	f.n = payload.Counter
 	for _, v := range payload.Latest {
 		f.register[v.Path] = &FileEvent{
-			Path:            v.Path,
-			LastTime:        time.Unix(v.LastTime, 0),
-			LastDuration:    time.Duration(v.LastDuration * float64(time.Second)),
-			LongestTime:     time.Unix(v.LongestTime, 0),
-			LongestDuration: time.Duration(v.LongestDuration * float64(time.Second)),
+			Path:               v.Path,
+			LastTime:           time.Unix(v.LastTime, 0),
+			LastDuration:       time.Duration(v.LastDuration * float64(time.Second)),
+			LastFileSize:       v.LastFileSize,
+			LastBytesPerSec:    v.LongestBytesPerSec,
+			LongestTime:        time.Unix(v.LongestTime, 0),
+			LongestDuration:    time.Duration(v.LongestDuration * float64(time.Second)),
+			LongestFileSize:    v.LongestFileSize,
+			LongestBytesPerSec: v.LongestBytesPerSec,
 		}
 	}
 
