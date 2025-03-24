@@ -75,14 +75,13 @@ type State struct {
 }
 
 type FsEventsStore struct {
-	cacheThreshold int64
-	register       map[string]*FileEvent
-	n              int64
-	nTape          int64
-	average        float64
-	averageTape    float64
-	bytesTape      float64
-	durationTape   float64
+	register     map[string]*FileEvent
+	n            int64
+	nTape        int64
+	average      float64
+	averageTape  float64
+	bytesTape    float64
+	durationTape float64
 }
 
 var FsEvents = FsEventsStore{
