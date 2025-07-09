@@ -11,26 +11,27 @@ import (
 	"github.com/infrasonar/go-libagent"
 )
 
-// STATE_VERSION is the version for tje json file. This might be useful when a
+// StateVersion is the version for tje json file. This might be useful when a
 // migration is required.
-const STATE_VERSION = 1
+const StateVersion = 1
 
-// THRESHOLD_NON_CACHE is the minimal time in seconds which we consider that the file
+// ThresholdNonCache is the minimal time in seconds which we consider that the file
 // is loaded from tape and not from cache. Longer than 8.0 seconds seems reasonable to
 // assume that the file has been read from tape.
-const THRESHOLD_NON_CACHE = 8.0
+const ThresholdNonCache = 8.0
 
 // ThresholdCacheBps can be overwritten with environment variable
 var ThresholdCacheBps float64 = 800000000.0
 
-// MAX_FILES is the maximum number of files considered as latest. The oldestfiles will be
+// MaxFiles is the maximum number of files considered as latest. The oldestfiles will be
 // removed from cache once this limit is reached.
-const MAX_FILES = 200
+const MaxFiles = 200
 
 func isFromCache(elapsed, bps float64) bool {
-	return elapsed < THRESHOLD_NON_CACHE || bps > ThresholdCacheBps
+	return elapsed < ThresholdNonCache || bps > ThresholdCacheBps
 }
 
+// FileEvent holds the metric state for file events
 type FileEvent struct {
 	Path                      string
 	LastTime                  time.Time
@@ -47,6 +48,7 @@ type FileEvent struct {
 	LongestRecoverBytesPerSec float64
 }
 
+// StateLoad describes the state structs for loading state from disk
 type StateLoad struct {
 	Version     int     `json:"version"`
 	Average     float64 `json:"average"`
@@ -70,6 +72,7 @@ type StateLoad struct {
 	} `json:"latest"`
 }
 
+// State describe the json structure for the state
 type State struct {
 	Version               int              `json:"version"`
 	Average               float64          `json:"average"`
@@ -86,6 +89,7 @@ type State struct {
 	numTape               int
 }
 
+// FsEventsStore is a store to keep event globals
 type FsEventsStore struct {
 	register     map[string]*FileEvent
 	n            int64
@@ -96,6 +100,7 @@ type FsEventsStore struct {
 	durationTape float64
 }
 
+// FsEvents keeps global metrics
 var FsEvents = FsEventsStore{
 	register:     map[string]*FileEvent{},
 	n:            0,
@@ -106,6 +111,7 @@ var FsEvents = FsEventsStore{
 	durationTape: 0.0,
 }
 
+// Set is used to register an Open event
 func (f *FsEventsStore) Set(path string) {
 	fmt.Printf("Register path: %s\n", path)
 	if v, ok := f.register[path]; ok {
@@ -124,6 +130,7 @@ func (f *FsEventsStore) Set(path string) {
 	}
 }
 
+// Upd is used to process a Close Read event
 func (f *FsEventsStore) Upd(path string) {
 	if v, ok := f.register[path]; ok {
 		fi, err := os.Stat(path)
@@ -137,7 +144,7 @@ func (f *FsEventsStore) Upd(path string) {
 
 			if !isFromCache(elapsed, v.LastBytesPerSec) {
 				nn := float64(f.nTape)
-				f.nTape += 1
+				f.nTape++
 				f.averageTape = (f.averageTape*nn + elapsed) / float64(f.nTape)
 				f.bytesTape += float64(v.LastFileSize)
 				f.durationTape += elapsed
@@ -151,7 +158,7 @@ func (f *FsEventsStore) Upd(path string) {
 			}
 
 			nn := float64(f.n)
-			f.n += 1
+			f.n++
 			f.average = (f.average*nn + elapsed) / float64(f.n)
 		} else {
 			log.Printf("Failed to read file stat: %v (%v)", path, err)
@@ -159,6 +166,7 @@ func (f *FsEventsStore) Upd(path string) {
 	}
 }
 
+// CloseWr is used to process a Close Write event
 func (f *FsEventsStore) CloseWr(path string) {
 	if v, ok := f.register[path]; ok {
 		fi, err := os.Stat(path)
@@ -172,7 +180,7 @@ func (f *FsEventsStore) CloseWr(path string) {
 
 			if !isFromCache(elapsed, v.LastRecoverBytesPerSec) {
 				nn := float64(f.nTape)
-				f.nTape += 1
+				f.nTape++
 				f.averageTape = (f.averageTape*nn + elapsed) / float64(f.nTape)
 				f.bytesTape += float64(v.LastFileSize)
 				f.durationTape += elapsed
@@ -186,7 +194,7 @@ func (f *FsEventsStore) CloseWr(path string) {
 			}
 
 			nn := float64(f.n)
-			f.n += 1
+			f.n++
 			f.average = (f.average*nn + elapsed) / float64(f.n)
 		} else {
 			log.Printf("Failed to read file stat: %v (%v)", path, err)
@@ -194,12 +202,12 @@ func (f *FsEventsStore) CloseWr(path string) {
 	}
 }
 
-// Latest returns the latest `n“ files which are processed (queued files are skipped)
+// GetState returns the latest `n“ files which are processed (queued files are skipped)
 // This also cleans older files from the registry so we don't need to clean during each
 // registration
 func (f *FsEventsStore) GetState() *State {
 	done := make([]*FileEvent, 0, len(f.register))
-	ret := make([]map[string]any, 0, MAX_FILES)
+	ret := make([]map[string]any, 0, MaxFiles)
 	avgLatest := 0.0
 	avgLatestTape := 0.0
 	bytesPerSecTape := 0.0
@@ -224,7 +232,7 @@ func (f *FsEventsStore) GetState() *State {
 	})
 
 	for idx, v := range done {
-		if idx > MAX_FILES {
+		if idx > MaxFiles {
 			delete(f.register, v.Path)
 		} else {
 			lastDuration := v.LastDuration.Seconds()
@@ -253,7 +261,7 @@ func (f *FsEventsStore) GetState() *State {
 			})
 			avgLatest += longestDuration
 			if !longestFromCache {
-				numTape += 1
+				numTape++
 				avgLatestTape += longestDuration
 				bytesPerSecLatestTape += float64(v.LongestFileSize)
 			}
@@ -272,7 +280,7 @@ func (f *FsEventsStore) GetState() *State {
 	}
 
 	return &State{
-		Version:               STATE_VERSION,
+		Version:               StateVersion,
 		Average:               f.average,
 		AverageTape:           f.averageTape,
 		Counter:               f.n,
@@ -288,6 +296,7 @@ func (f *FsEventsStore) GetState() *State {
 	}
 }
 
+// Save stores the state to disk
 func (s *State) Save() error {
 	fn := os.Getenv("FN_STATE_JSON")
 	if fn == "" {
@@ -301,6 +310,7 @@ func (s *State) Save() error {
 	return os.WriteFile(fn, bytes, 0644)
 }
 
+// Restore loads the state from disk
 func (f *FsEventsStore) Restore() error {
 	fn := os.Getenv("FN_STATE_JSON")
 	if fn == "" {

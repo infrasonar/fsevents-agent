@@ -39,6 +39,7 @@ func handleEvents(w *fsevents.Watcher, quit chan bool) error {
 	}
 }
 
+// FileWatcher detect and records file changes
 func FileWatcher(quit chan bool) {
 	cacheBpsThresholdEnv := os.Getenv("CACHE_BPS_THRESHOLD")
 	if cacheBpsThresholdEnv != "" {

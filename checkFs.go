@@ -4,6 +4,7 @@ import (
 	"github.com/infrasonar/go-libagent"
 )
 
+// CheckFs runs the file system check
 func CheckFs(_ *libagent.Check) (map[string][]map[string]any, error) {
 	state := map[string][]map[string]any{}
 
