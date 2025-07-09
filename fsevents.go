@@ -32,15 +32,19 @@ func isFromCache(elapsed, bps float64) bool {
 }
 
 type FileEvent struct {
-	Path               string
-	LastTime           time.Time
-	LastDuration       time.Duration
-	LastFileSize       int64
-	LastBytesPerSec    float64
-	LongestTime        time.Time
-	LongestDuration    time.Duration
-	LongestFileSize    int64
-	LongestBytesPerSec float64
+	Path                      string
+	LastTime                  time.Time
+	LastDuration              time.Duration
+	LastFileSize              int64
+	LastBytesPerSec           float64
+	LastRecoverDuration       time.Duration
+	LastRecoverBytesPerSec    float64
+	LongestTime               time.Time
+	LongestDuration           time.Duration
+	LongestFileSize           int64
+	LongestBytesPerSec        float64
+	LongestRecoverDuration    time.Duration
+	LongestRecoverBytesPerSec float64
 }
 
 type StateLoad struct {
@@ -50,15 +54,19 @@ type StateLoad struct {
 	Counter     int64   `json:"n"`
 	CounterTape int64   `json:"nTape"`
 	Latest      []struct {
-		Path               string  `json:"name"`
-		LastTime           int64   `json:"lastTime"`
-		LastDuration       float64 `json:"lastDuration"`
-		LastFileSize       int64   `json:"lastFileSize"`
-		LastBytesPerSec    float64 `json:"lastBytesPerSec"`
-		LongestTime        int64   `json:"longestTime"`
-		LongestDuration    float64 `json:"longestDuration"`
-		LongestFileSize    int64   `json:"longestFileSize"`
-		LongestBytesPerSec float64 `json:"longestBytesPerSec"`
+		Path                      string  `json:"name"`
+		LastTime                  int64   `json:"lastTime"`
+		LastDuration              float64 `json:"lastDuration"`
+		LastRecoverDuration       float64 `json:"lastRecoverDuration"`
+		LastFileSize              int64   `json:"lastFileSize"`
+		LastBytesPerSec           float64 `json:"lastBytesPerSec"`
+		LastRecoverBytesPerSec    float64 `json:"lastRecoverBytesPerSec"`
+		LongestTime               int64   `json:"longestTime"`
+		LongestDuration           float64 `json:"longestDuration"`
+		LongestRecoverDuration    float64 `json:"longestRecoverDuration"`
+		LongestFileSize           int64   `json:"longestFileSize"`
+		LongestBytesPerSec        float64 `json:"longestBytesPerSec"`
+		LongestRecoverBytesPerSec float64 `json:"longestRecoverBytesPerSec"`
 	} `json:"latest"`
 }
 
@@ -104,8 +112,10 @@ func (f *FsEventsStore) Set(path string) {
 		// Reset to time and zero to all
 		v.LastTime = time.Now()
 		v.LastDuration = 0
+		v.LastRecoverDuration = 0
 		v.LastFileSize = 0
 		v.LastBytesPerSec = 0.0
+		v.LastRecoverBytesPerSec = 0.0
 	} else {
 		f.register[path] = &FileEvent{
 			Path:     path,
@@ -138,6 +148,41 @@ func (f *FsEventsStore) Upd(path string) {
 				v.LongestTime = v.LastTime
 				v.LongestFileSize = v.LastFileSize
 				v.LongestBytesPerSec = v.LastBytesPerSec
+			}
+
+			nn := float64(f.n)
+			f.n += 1
+			f.average = (f.average*nn + elapsed) / float64(f.n)
+		} else {
+			log.Printf("Failed to read file stat: %v (%v)", path, err)
+		}
+	}
+}
+
+func (f *FsEventsStore) CloseWr(path string) {
+	if v, ok := f.register[path]; ok {
+		fi, err := os.Stat(path)
+		if err == nil {
+			fmt.Printf("Calculate recover time path: %s\n", path)
+			v.LastFileSize = fi.Size()
+			v.LastRecoverDuration = time.Since(v.LastTime)
+
+			elapsed := v.LastRecoverDuration.Seconds()
+			v.LastRecoverBytesPerSec = float64(v.LastFileSize) / elapsed
+
+			if !isFromCache(elapsed, v.LastRecoverBytesPerSec) {
+				nn := float64(f.nTape)
+				f.nTape += 1
+				f.averageTape = (f.averageTape*nn + elapsed) / float64(f.nTape)
+				f.bytesTape += float64(v.LastFileSize)
+				f.durationTape += elapsed
+			}
+
+			if v.LongestDuration < v.LastDuration {
+				v.LongestRecoverDuration = v.LastRecoverDuration
+				v.LongestTime = v.LastTime
+				v.LongestFileSize = v.LastFileSize
+				v.LongestRecoverBytesPerSec = v.LastRecoverBytesPerSec
 			}
 
 			nn := float64(f.n)
@@ -183,22 +228,28 @@ func (f *FsEventsStore) GetState() *State {
 			delete(f.register, v.Path)
 		} else {
 			lastDuration := v.LastDuration.Seconds()
+			lastRecoverDuration := v.LastRecoverDuration.Seconds()
 			lastFromCache := isFromCache(lastDuration, v.LastBytesPerSec)
 			longestDuration := v.LongestDuration.Seconds()
+			longestRecoverDuration := v.LongestRecoverDuration.Seconds()
 			longestFromCache := isFromCache(longestDuration, v.LongestBytesPerSec)
 
 			ret = append(ret, map[string]any{
-				"name":               v.Path,
-				"lastTime":           v.LastTime.Unix(),
-				"lastDuration":       libagent.IFloat64(lastDuration),
-				"lastBytesPerSec":    libagent.IFloat64(v.LastBytesPerSec),
-				"lastFileSize":       v.LastFileSize,
-				"lastFromCache":      lastFromCache,
-				"longestTime":        v.LongestTime.Unix(),
-				"longestDuration":    libagent.IFloat64(longestDuration),
-				"longestBytesPerSec": libagent.IFloat64(v.LongestBytesPerSec),
-				"longestFileSize":    v.LongestFileSize,
-				"longestFromCache":   longestFromCache,
+				"name":                      v.Path,
+				"lastTime":                  v.LastTime.Unix(),
+				"lastDuration":              libagent.IFloat64(lastDuration),
+				"lastRecoverDuration":       libagent.IFloat64(lastRecoverDuration),
+				"lastBytesPerSec":           libagent.IFloat64(v.LastBytesPerSec),
+				"lastRecoverBytesPerSec":    libagent.IFloat64(v.LastRecoverBytesPerSec),
+				"lastFileSize":              v.LastFileSize,
+				"lastFromCache":             lastFromCache,
+				"longestTime":               v.LongestTime.Unix(),
+				"longestDuration":           libagent.IFloat64(longestDuration),
+				"longestRecoverDuration":    libagent.IFloat64(longestRecoverDuration),
+				"longestBytesPerSec":        libagent.IFloat64(v.LongestBytesPerSec),
+				"longestRecoverBytesPerSec": libagent.IFloat64(v.LongestRecoverBytesPerSec),
+				"longestFileSize":           v.LongestFileSize,
+				"longestFromCache":          longestFromCache,
 			})
 			avgLatest += longestDuration
 			if !longestFromCache {
@@ -271,15 +322,19 @@ func (f *FsEventsStore) Restore() error {
 	f.n = payload.Counter
 	for _, v := range payload.Latest {
 		f.register[v.Path] = &FileEvent{
-			Path:               v.Path,
-			LastTime:           time.Unix(v.LastTime, 0),
-			LastDuration:       time.Duration(v.LastDuration * float64(time.Second)),
-			LastFileSize:       v.LastFileSize,
-			LastBytesPerSec:    v.LongestBytesPerSec,
-			LongestTime:        time.Unix(v.LongestTime, 0),
-			LongestDuration:    time.Duration(v.LongestDuration * float64(time.Second)),
-			LongestFileSize:    v.LongestFileSize,
-			LongestBytesPerSec: v.LongestBytesPerSec,
+			Path:                      v.Path,
+			LastTime:                  time.Unix(v.LastTime, 0),
+			LastDuration:              time.Duration(v.LastDuration * float64(time.Second)),
+			LastRecoverDuration:       time.Duration(v.LastRecoverDuration * float64(time.Second)),
+			LastFileSize:              v.LastFileSize,
+			LastBytesPerSec:           v.LongestBytesPerSec,
+			LastRecoverBytesPerSec:    v.LongestRecoverBytesPerSec,
+			LongestTime:               time.Unix(v.LongestTime, 0),
+			LongestDuration:           time.Duration(v.LongestDuration * float64(time.Second)),
+			LongestRecoverDuration:    time.Duration(v.LongestRecoverDuration * float64(time.Second)),
+			LongestFileSize:           v.LongestFileSize,
+			LongestBytesPerSec:        v.LongestBytesPerSec,
+			LongestRecoverBytesPerSec: v.LongestRecoverBytesPerSec,
 		}
 	}
 

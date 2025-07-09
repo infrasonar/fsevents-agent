@@ -24,6 +24,9 @@ func handleEvents(w *fsevents.Watcher, quit chan bool) error {
 				} else if fsevents.CheckMask(fsevents.CloseRead, event.RawEvent.Mask) {
 					// Calculate elapsed time
 					FsEvents.Upd(event.Path)
+				} else if fsevents.CheckMask(fsevents.CloseWrite, event.RawEvent.Mask) {
+					// Calculate elapsed recover time
+					FsEvents.CloseWr((event.Path))
 				}
 			}
 		case err := <-w.Errors:
