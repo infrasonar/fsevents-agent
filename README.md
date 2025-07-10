@@ -30,7 +30,7 @@ CGO_ENABLED=0 go build -trimpath -o fsevents-agent
 
 Download the latest release:
 ```bash
-wget https://github.com/infrasonar/fsevents-agent/releases/download/v0.1.0/fsevents-agent
+wget https://github.com/infrasonar/fsevents-agent/releases/download/v1.0.3/fsevents-agent
 ```
 
 > _The pre-build binary is build for the **fsevents-amd64** platform. For other platforms build from source using the command:_ `CGO_ENABLED=0 go build -o fsevents-agent`
