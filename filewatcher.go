@@ -21,6 +21,9 @@ func handleEvents(w *fsevents.Watcher, quit chan bool) error {
 				if fsevents.CheckMask(fsevents.Open, event.RawEvent.Mask) {
 					// Register the file
 					FsEvents.Set(event.Path)
+				} else if fsevents.CheckMask(fsevents.CloseWrite, event.RawEvent.Mask) {
+					// Calculate elapsed recover time
+					FsEvents.CloseWr((event.Path))
 				} else if fsevents.CheckMask(fsevents.CloseRead, event.RawEvent.Mask) {
 					// Calculate elapsed time
 					FsEvents.Upd(event.Path)
@@ -36,6 +39,7 @@ func handleEvents(w *fsevents.Watcher, quit chan bool) error {
 	}
 }
 
+// FileWatcher detect and records file changes
 func FileWatcher(quit chan bool) {
 	cacheBpsThresholdEnv := os.Getenv("CACHE_BPS_THRESHOLD")
 	if cacheBpsThresholdEnv != "" {
