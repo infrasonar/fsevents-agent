@@ -25,6 +25,7 @@ func CheckFs(_ *libagent.Check) (map[string][]map[string]any, error) {
 
 	state["stats"] = []map[string]any{{
 		"name":                  "stats",
+		"bytesTape":             int64(fstate.BytesTape),
 		"counter":               fstate.Counter,
 		"counterTape":           fstate.CounterTape,
 		"average":               libagent.IFloat64(fstate.Average),
