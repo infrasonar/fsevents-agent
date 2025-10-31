@@ -56,7 +56,7 @@ type StateLoad struct {
 	Counter      int64   `json:"n"`
 	CounterTape  int64   `json:"nTape"`
 	BytesTape    float64 `json:"bytesTape"`
-	DurationTape float64 `json:"durationType"`
+	DurationTape float64 `json:"durationTape"`
 	Latest       []struct {
 		Path                      string  `json:"name"`
 		LastTime                  int64   `json:"lastTime"`
