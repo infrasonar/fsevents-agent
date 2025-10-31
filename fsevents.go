@@ -50,12 +50,14 @@ type FileEvent struct {
 
 // StateLoad describes the state structs for loading state from disk
 type StateLoad struct {
-	Version     int     `json:"version"`
-	Average     float64 `json:"average"`
-	AverageTape float64 `json:"averageTape"`
-	Counter     int64   `json:"n"`
-	CounterTape int64   `json:"nTape"`
-	Latest      []struct {
+	Version      int     `json:"version"`
+	Average      float64 `json:"average"`
+	AverageTape  float64 `json:"averageTape"`
+	Counter      int64   `json:"n"`
+	CounterTape  int64   `json:"nTape"`
+	BytesTape    float64 `json:"bytesTape"`
+	DurationTape float64 `json:"durationType"`
+	Latest       []struct {
 		Path                      string  `json:"name"`
 		LastTime                  int64   `json:"lastTime"`
 		LastDuration              float64 `json:"lastDuration"`
@@ -330,6 +332,9 @@ func (f *FsEventsStore) Restore() error {
 
 	f.average = payload.Average
 	f.n = payload.Counter
+	f.bytesTape = payload.BytesTape
+	f.durationTape = payload.DurationTape
+
 	for _, v := range payload.Latest {
 		f.register[v.Path] = &FileEvent{
 			Path:                      v.Path,
